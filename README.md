@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Event Ticketing and Booking: Course Capstone
 
 **Organizers publish events. Attendees buy tickets. Staff check people in with QR codes.**
@@ -148,3 +149,7 @@ src/domain/     plain rules: no I/O, no HTTP
 scripts/        things you run by hand
 docs/           milestones and user stories
 ```
+=======
+# dsa2.0_event-ticketing_capstone
+Capstone Project for DSA 2.0 Skill Programme
+>>>>>>> 0ad0202e5229747079b3838b241a5fb35f77d572
