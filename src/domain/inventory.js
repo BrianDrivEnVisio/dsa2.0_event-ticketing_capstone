@@ -34,6 +34,26 @@ function nonNegativeCents(value, label) {
   return value;
 }
 
+function validIsoDate(value) {
+  if (typeof value !== 'string') {
+    return false;
+  }
+
+  const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(value);
+  const dateTime = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:\d{2})$/.test(value);
+  if (!dateOnly && !dateTime) {
+    return false;
+  }
+
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) {
+    return false;
+  }
+
+  const datePart = value.slice(0, 10);
+  return new Date(`${datePart}T00:00:00.000Z`).toISOString().slice(0, 10) === datePart;
+}
+
 function assertStore(store) {
   if (store === null || typeof store !== 'object' || !stores.has(store)) {
     throw new DomainError('A store created by createStore() is required.', 'VALIDATION');
@@ -80,11 +100,31 @@ export function createStore() {
 export function createEvent(store, input) {
   assertStore(store);
   assertRecord(input, 'Event');
-  const name = requiredString(input.name, 'name');
+  const legacyInput = input.title === undefined
+    && input.city === undefined
+    && input.venue === undefined
+    && input.date === undefined
+    && typeof input.name === 'string';
+  const title = requiredString(legacyInput ? input.name : input.title, 'title');
+  const details = legacyInput
+    ? {}
+    : {
+      city: requiredString(input.city, 'city'),
+      venue: requiredString(input.venue, 'venue'),
+      date: requiredString(input.date, 'date'),
+    };
+
+  if (!legacyInput && !validIsoDate(details.date)) {
+    throw new DomainError('date must be a real ISO date or date-time.', 'VALIDATION');
+  }
 
   const event = {
     id: newId(),
-    name,
+    title,
+    name: title,
+    ...details,
+    published: false,
+    status: 'draft',
     tiers: new Map(),
   };
   store.events.set(event.id, event);
@@ -109,10 +149,54 @@ export function addTier(store, eventId, input) {
     name,
     capacity,
     available: capacity,
+    sold: 0,
     priceCents,
   };
   event.tiers.set(tier.id, tier);
   return tier;
+}
+
+export function publishEvent(store, eventId) {
+  assertStore(store);
+  const event = getEvent(store, eventId);
+  if (event.tiers.size === 0) {
+    throw new DomainError('An event must have at least one ticket tier before it can be published.', 'INVALID_STATE');
+  }
+
+  event.published = true;
+  event.status = 'published';
+  return event;
+}
+
+export function unpublishEvent(store, eventId) {
+  assertStore(store);
+  const event = getEvent(store, eventId);
+  event.published = false;
+  event.status = 'draft';
+  return event;
+}
+
+export function listEventSummaries(store, options = {}) {
+  assertStore(store);
+  assertRecord(options, 'options');
+  const { publishedOnly = true } = options;
+  if (typeof publishedOnly !== 'boolean') {
+    throw new DomainError('publishedOnly must be a boolean.', 'VALIDATION');
+  }
+
+  return [...store.events.values()]
+    .filter((event) => !publishedOnly || event.published)
+    .map((event) => ({
+      id: event.id,
+      title: event.title,
+      name: event.name,
+      city: event.city,
+      venue: event.venue,
+      date: event.date,
+      published: event.published,
+      status: event.status,
+      tiers: [...event.tiers.values()].map((tier) => ({ ...tier })),
+    }));
 }
 
 export function bookTickets(store, input) {
@@ -149,10 +233,11 @@ export function bookTickets(store, input) {
     quantity,
     unitPriceCents: tier.priceCents,
     totalCents,
-    status: 'booked',
+    status: 'pending',
   };
 
   tier.available -= quantity;
+  tier.sold += quantity;
   store.bookings.push(booking);
   store.bookingsByReference.set(reference, booking);
   return booking;
@@ -176,6 +261,7 @@ export function cancelBooking(store, reference) {
   }
 
   tier.available += booking.quantity;
+  tier.sold -= booking.quantity;
   booking.status = 'cancelled';
   return booking;
 }
