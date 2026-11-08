@@ -147,3 +147,9 @@ vite.config.ts.timestamp-*
 
 # Turbo Repo
 .turbo
+
+# VS code hidden folder
+.vscode/
+
+# Folder for initial remote main branch
+dsa2.0_event-ticketing_capstone/
